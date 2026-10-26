@@ -171,3 +171,13 @@ Para poder revisar tu front con independencia de la tecnología:
 5. **Sustentación** de 45 minutos, sin asistentes de IA:
    - 20 min de demostración: levantar el proyecto y el front siguiendo tu README y mostrar los resultados.
    - 25 min de preguntas sobre tu código, tus decisiones y tu historial de commits.
+
+## Recomendaciones sobre el uso de IA y la explicabilidad
+
+El uso de asistentes de inteligencia artificial está permitido como herramienta de apoyo durante el desarrollo, pero ten presente estas pautas fundamentales para la evaluación:
+
+1. **Responsabilidad y autoría sobre el código:** Eres el responsable final de cada línea, abstracción y prueba en tu entrega. Durante la sustentación se asumirá que comprendes a fondo la totalidad del código y su impacto en el sistema.
+2. **Explicabilidad por encima de la automatización:** La sesión en vivo se realiza **sin asistentes de IA** y evalúa tu criterio de ingeniería. Deberás poder explicar el porqué de tus decisiones técnicas, las alternativas que descartaste, predecir el comportamiento del sistema ante diversos escenarios y justificar el contenido de cada commit.
+3. **Validación crítica:** No asumas que el código generado por una IA es correcto únicamente porque "corre" o porque los tests existentes pasen en verde. Tu capacidad para verificar la exactitud de los resultados frente a valores teóricos, identificar posibles fallas de seguridad y optimizar el uso de recursos es el foco principal de la prueba.
+4. **Higiene del historial en Git:** Realiza tus commits manualmente y de forma atómica, asegurando que cada mensaje describa con precisión el diff correspondiente. El historial de commits debe reflejar un proceso de razonamiento gradual, no volcados masivos o automáticos.
+
