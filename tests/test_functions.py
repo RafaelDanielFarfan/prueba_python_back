@@ -89,3 +89,12 @@ async def test_create_accepts_high_resolution(client):
 
     assert response.status_code == 201
     assert response.json()["resolution"] == 1024
+
+
+async def test_create_rejects_attribute_access_in_expression(client):
+    _, headers = await register_and_login(client, "ana")
+    payload = {**SPHERE, "expression": "().__class__.__base__.__subclasses__().__len__() * 0 + x"}
+
+    response = await client.post("/functions", json=payload, headers=headers)
+
+    assert response.status_code == 422
