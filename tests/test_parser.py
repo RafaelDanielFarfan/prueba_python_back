@@ -79,3 +79,9 @@ def test_check_accepts_documented_grammar(expression):
 def test_check_rejects_constructs_outside_the_grammar(expression):
     with pytest.raises(ExpressionError):
         check_expression(expression)
+
+
+@pytest.mark.parametrize("expression", ["9**9**9**9", "1e999 + x", "10**400 + x"])
+def test_check_rejects_expressions_that_overflow(expression):
+    with pytest.raises(ExpressionError):
+        check_expression(expression)
