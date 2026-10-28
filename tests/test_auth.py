@@ -25,6 +25,20 @@ async def test_register_rejects_duplicated_username(client):
     assert response.status_code == 409
 
 
+async def test_register_conflict_when_duplicate_slips_past_existence_check(client, monkeypatch):
+    """Dos registros simultáneos pueden pasar ambos la consulta previa; el índice único decide."""
+    await register(client)
+
+    async def never_exists(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr("app.users.service.exists_user", never_exists)
+
+    response = await register(client)
+
+    assert response.status_code == 409
+
+
 async def test_register_validates_password_length(client):
     response = await register(client, password="corta")
 
