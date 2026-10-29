@@ -35,14 +35,15 @@ def voxel_volume(grid: SampledGrid) -> float:
 
 
 def mesh_volume(mesh: TriangleMesh) -> float:
-    """Volumen encerrado por una malla cerrada (teorema de la divergencia, tetraedros con el origen)."""
+    """Volumen encerrado por una malla cerrada (teorema de la divergencia, tetraedros con el origen).
+
+    Es positivo si las caras apuntan hacia fuera. Un valor negativo indica una malla mal orientada,
+    por eso no se oculta con un valor absoluto.
+    """
     if mesh.is_empty:
         return 0.0
     v0, v1, v2 = (mesh.vertices[mesh.faces[:, i]] for i in range(3))
-    signed = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0
-    # La suma de tetraedros acumula error de redondeo y el signo depende de la orientación
-    # numérica de los triángulos; el volumen es una magnitud, se reporta en valor absoluto.
-    return float(abs(signed))
+    return float(np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0)
 
 
 def domain_volume(domain: list[list[float]]) -> float:
