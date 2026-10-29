@@ -181,3 +181,52 @@ El uso de asistentes de inteligencia artificial está permitido como herramienta
 3. **Validación crítica:** No asumas que el código generado por una IA es correcto únicamente porque "corre" o porque los tests existentes pasen en verde. Tu capacidad para verificar la exactitud de los resultados frente a valores teóricos, identificar posibles fallas de seguridad y optimizar el uso de recursos es el foco principal de la prueba.
 4. **Higiene del historial en Git:** Realiza tus commits manualmente y de forma atómica, asegurando que cada mensaje describa con precisión el diff correspondiente. El historial de commits debe reflejar un proceso de razonamiento gradual, no volcados masivos o automáticos.
 
+
+---
+
+# Resultados de la tarea C: convergencia del volumen
+
+## Valores de referencia
+
+| Función | Valor de referencia | Cómo se obtiene |
+|---|---|---|
+| Esfera (`r = 1`) | `4/3 · π = 4.188790` | Fórmula exacta |
+| Toro (`R = 1`, `r = 0.25`) | `2π² · R · r² = 1.233701` | Fórmula exacta (teorema de Pappus) |
+| Gyroide en `[0, 2π]³` | `(2π)³ / 2 = 124.025107` | `f(x+π, y+π, z+π) = −f(x, y, z)`, por lo que la región `f ≤ 0` ocupa exactamente la mitad del dominio |
+
+El gyroide no tiene fórmula cerrada para su volumen, pero la simetría anterior permite deducirlo sin cálculo numérico: desplazar un punto `(π, π, π)` invierte el signo de `f`, así que la mitad del cubo cumple `f ≤ 0`.
+
+## Tabla de convergencia
+
+Error relativo `|V − V_ref| / V_ref`. Se genera con `uv run python -m scripts.convergence` (requiere el `.env` configurado).
+
+| Función | n | Volumen malla | Error malla | Volumen vóxel | Error vóxel |
+|---|---|---|---|---|---|
+| esfera | 32 | 4.159120 | 7.08e-03 | 4.241549 | 1.26e-02 |
+| esfera | 64 | 4.181670 | 1.70e-03 | 4.213800 | 5.97e-03 |
+| esfera | 128 | 4.187033 | 4.19e-04 | 4.185905 | 6.89e-04 |
+| esfera | 256 | 4.188355 | 1.04e-04 | 4.190248 | 3.48e-04 |
+| toro | 32 | 1.183143 | 4.10e-02 | 1.254339 | 1.67e-02 |
+| toro | 64 | 1.219294 | 1.17e-02 | 1.225786 | 6.42e-03 |
+| toro | 128 | 1.230457 | 2.63e-03 | 1.235441 | 1.41e-03 |
+| toro | 256 | 1.232844 | 6.94e-04 | 1.232114 | 1.29e-03 |
+| gyroide | 32 | 124.025395 | 2.32e-06 | 124.029270 | 3.36e-05 |
+| gyroide | 64 | 124.025194 | 7.03e-07 | 124.025603 | 4.00e-06 |
+| gyroide | 128 | 124.025162 | 4.49e-07 | 124.025167 | 4.88e-07 |
+| gyroide | 256 | 124.025122 | 1.24e-07 | 124.025114 | 6.03e-08 |
+
+## Lectura de los resultados
+
+- **Malla (`mesh_volume`):** el error se divide aproximadamente por 4 al duplicar `n` (esfera: 7.1e-3, 1.7e-3, 4.2e-4, 1.0e-4), es decir, converge con orden 2. Por eso es el valor de referencia de la prueba.
+- **Vóxeles (`voxel_volume`):** el indicador `f ≤ 0` es discontinuo en la superficie, por lo que el error es de orden 1 y irregular (en el toro, de 128 a 256 casi no mejora). Es un estimador más grosero.
+- **Toro:** es la forma más delgada: con `n = 32` el tubo (radio 0.25) abarca unas 3 muestras, por lo que el error inicial es el mayor.
+- **Gyroide:** la superficie cruza las caras del dominio. La malla se cierra rodeando la rejilla con una capa exterior de valor muy grande, y los vóxeles de borde se ponderan con 1/2, 1/4 y 1/8 (regla del trapecio). Sin esas dos correcciones el volumen de malla daba ≈ 0 y el de vóxeles se sobrestimaba un 5 %.
+
+## Errores que se corrigieron para obtener estos valores
+
+1. El espaciado de la rejilla dividía por `n` en lugar de `n − 1` (la malla se encogía un `~3/n`).
+2. `np.meshgrid(indexing="xy")` intercambiaba los ejes `x` e `y` respecto a lo que espera `marching_cubes`; se usa `"ij"`.
+3. La malla quedaba abierta donde la superficie toca el borde del dominio.
+4. Los vóxeles del borde se contaban como celdas completas.
+5. El volumen de malla se reportaba con `abs()`, lo que ocultaba una orientación incorrecta.
+6. La caché usaba solo el id de la función como clave y devolvía resultados antiguos tras editarla.
