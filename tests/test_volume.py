@@ -2,10 +2,12 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from app.functions.examples import EXAMPLES_BY_SLUG
-from app.volumes.volume import estimate_volume
+from app.volumes.sampling import SampledGrid
+from app.volumes.volume import estimate_volume, voxel_volume
 from tests.helpers import register_and_login
 
 GOLDEN = json.loads((Path(__file__).parent / "golden" / "volumes.json").read_text())
@@ -98,3 +100,19 @@ def test_mesh_volume_of_half_space_cut_by_domain():
     estimate = estimate_volume("x - 0.3", domain, 16)
 
     assert estimate.mesh_volume == pytest.approx(5.2, rel=1e-4)
+
+
+def test_voxel_volume_of_fully_inside_grid_is_the_box_volume():
+    """3 muestras por eje delimitan 2 intervalos: la caja mide (2 · 0.5)³ = 1, no 3³ celdas de 0.5³."""
+    grid = SampledGrid(values=-np.ones((3, 3, 3)), origin=(0.0, 0.0, 0.0), spacing=(0.5, 0.5, 0.5))
+
+    assert voxel_volume(grid) == pytest.approx(1.0)
+
+
+def test_voxel_volume_of_surface_cut_by_domain_boundary():
+    function = EXAMPLES_BY_SLUG["gyroide"].function
+    expected = (2 * math.pi) ** 3 / 2
+
+    estimate = estimate_volume(function.expression, function.domain, 64)
+
+    assert estimate.voxel_volume == pytest.approx(expected, rel=1e-3)
