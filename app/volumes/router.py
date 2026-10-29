@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Response
 
 from app.core.logging import get_logger
@@ -16,9 +18,12 @@ logger = get_logger(__name__)
 
 @router.get("/{function_id}/volume")
 async def get_volume(function: OwnedFunction) -> VolumeResult:
-    estimate: VolumeEstimate = volume_cache.get_or_compute(
+    expression, domain, resolution = function.expression, function.domain, function.resolution
+    # El cálculo es CPU puro y síncrono: en un hilo para no bloquear el event loop.
+    estimate: VolumeEstimate = await asyncio.to_thread(
+        volume_cache.get_or_compute,
         (function.id, function.version),
-        lambda: estimate_volume(function.expression, function.domain, function.resolution),
+        lambda: estimate_volume(expression, domain, resolution),
     )
     logger.info(
         "volume_computed",
@@ -39,11 +44,13 @@ async def get_volume(function: OwnedFunction) -> VolumeResult:
 @router.get("/{function_id}/mesh.bin", response_class=Response)
 async def get_mesh(function: OwnedFunction) -> Response:
 
+    expression, domain, resolution = function.expression, function.domain, function.resolution
+
     def build_payload() -> bytes:
-        grid = sample_function(function.expression, function.domain, function.resolution)
+        grid = sample_function(expression, domain, resolution)
         mesh = extract_mesh(grid)
         logger.info("mesh_generated", function_id=function.id, faces=len(mesh.faces))
         return encode_mesh(mesh)
 
-    payload = mesh_cache.get_or_compute((function.id, function.version), build_payload)
+    payload = await asyncio.to_thread(mesh_cache.get_or_compute, (function.id, function.version), build_payload)
     return Response(content=payload, media_type="application/octet-stream")
