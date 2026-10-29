@@ -1,10 +1,13 @@
 import asyncio
 import math
 import time
+import tracemalloc
 
 import pytest
 
+from app.core.config import Settings, get_settings
 from app.volumes import router as volumes_router
+from app.volumes.sampling import sample_function
 from app.volumes.volume import estimate_volume
 from tests.helpers import register_and_login
 
@@ -90,3 +93,73 @@ async def test_heavy_computation_does_not_block_the_event_loop(client, monkeypat
 
     assert (await request).status_code == 200
     assert stall < 0.25
+
+
+def settings_from(monkeypatch, **environment: str) -> Settings:
+    """Settings leída solo de variables de entorno, sin el .env local."""
+    for name in ("APP_MAX_RESOLUTION", "APP_MAX_CONCURRENT_COMPUTATIONS"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@localhost/db", secret_key="clave")
+
+
+def test_default_limits_keep_memory_bounded(monkeypatch):
+    """Una rejilla de 2048³ muestras ocupa unos 69 GB; el límite por defecto debe ser razonable."""
+    settings = settings_from(monkeypatch)
+
+    assert settings.max_resolution == 256
+    assert settings.max_concurrent_computations == 2
+
+
+def test_limits_are_read_from_environment(monkeypatch):
+    settings = settings_from(monkeypatch, APP_MAX_RESOLUTION="64", APP_MAX_CONCURRENT_COMPUTATIONS="1")
+
+    assert settings.max_resolution == 64
+    assert settings.max_concurrent_computations == 1
+
+
+async def test_resolution_above_the_configured_limit_is_rejected(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_resolution", 64)
+    _, headers = await register_and_login(client, "ana")
+    payload = {"name": "Esfera", "expression": "x**2 + y**2 + z**2 - 1", "domain": CUBE}
+
+    accepted = await client.post("/functions", json={**payload, "resolution": 64}, headers=headers)
+    rejected = await client.post("/functions", json={**payload, "resolution": 65}, headers=headers)
+
+    assert accepted.status_code == 201
+    assert rejected.status_code == 422
+
+
+def test_sampling_does_not_materialize_three_full_grids():
+    tracemalloc.start()
+    grid = sample_function("x**2 + y**2 + z**2 - 1", CUBE, 64)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert peak < 3 * grid.values.nbytes
+
+
+async def test_busy_server_answers_503_with_retry_after(client, monkeypatch):
+    from app.volumes.limiter import ComputeLimiter
+
+    original = volumes_router.estimate_volume
+
+    def slow(*args, **kwargs):
+        time.sleep(0.5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(volumes_router, "estimate_volume", slow)
+    monkeypatch.setattr(volumes_router, "compute_limiter", ComputeLimiter(1))
+    _, headers = await register_and_login(client, "ana")
+    payload = {"name": "Esfera", "expression": "x**2 + y**2 + z**2 - 1", "domain": CUBE, "resolution": 16}
+    first, second = [(await client.post("/functions", json=payload, headers=headers)).json()["id"] for _ in range(2)]
+
+    running = asyncio.create_task(client.get(f"/functions/{first}/volume", headers=headers))
+    await asyncio.sleep(0.2)
+    busy = await client.get(f"/functions/{second}/volume", headers=headers)
+
+    assert busy.status_code == 503
+    assert "Retry-After" in busy.headers
+    assert (await running).status_code == 200
+    assert (await client.get(f"/functions/{second}/volume", headers=headers)).status_code == 200
