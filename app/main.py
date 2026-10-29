@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
+from app.core.cors import add_cors
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestLoggingMiddleware
 from app.db.session import engine, init_db
@@ -35,6 +36,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestLoggingMiddleware)
+# Se añade al final para quedar como capa más externa: responde los preflight antes que el resto.
+add_cors(app, settings.cors_origin_list)
 
 
 @app.exception_handler(ServerBusyError)

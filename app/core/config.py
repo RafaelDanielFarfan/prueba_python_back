@@ -28,6 +28,13 @@ class Settings(BaseSettings):
 
     cache_max_items: int = 128
 
+    cors_origins: str = ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """Orígenes permitidos, a partir de ``APP_CORS_ORIGINS`` separados por comas."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
