@@ -71,3 +71,30 @@ def test_sphere_volume_matches_analytic_value(domain):
 
     assert estimate.mesh_volume == pytest.approx(expected, rel=1e-2)
     assert estimate.voxel_volume == pytest.approx(expected, rel=3e-2)
+
+
+def test_mesh_volume_of_surface_cut_by_domain_boundary():
+    """El gyroide cruza las caras del dominio; por simetría f(p + π) = -f(p), así que f ≤ 0 ocupa la mitad."""
+    function = EXAMPLES_BY_SLUG["gyroide"].function
+    expected = (2 * math.pi) ** 3 / 2
+
+    estimate = estimate_volume(function.expression, function.domain, 64)
+
+    assert estimate.mesh_volume == pytest.approx(expected, rel=1e-3)
+
+
+def test_mesh_volume_when_whole_domain_is_inside():
+    domain = [[-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5]]
+
+    estimate = estimate_volume("x**2 + y**2 + z**2 - 1", domain, 16)
+
+    assert estimate.mesh_volume == pytest.approx(1.0, rel=1e-6)
+
+
+def test_mesh_volume_of_half_space_cut_by_domain():
+    """f = x - 0.3 es lineal: la superficie es el plano x = 0.3 y la región ocupa 1.3 × 2 × 2."""
+    domain = [[-1, 1], [-1, 1], [-1, 1]]
+
+    estimate = estimate_volume("x - 0.3", domain, 16)
+
+    assert estimate.mesh_volume == pytest.approx(5.2, rel=1e-4)
