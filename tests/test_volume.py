@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from app.core.config import get_settings
 from app.functions.examples import EXAMPLES_BY_SLUG
 from app.volumes.mesh import TriangleMesh, extract_mesh
 from app.volumes.sampling import SampledGrid, sample_function
@@ -138,3 +139,68 @@ def test_extracted_mesh_is_oriented_outward(slug):
     mesh = extract_mesh(sample_function(function.expression, function.domain, 32))
 
     assert mesh_volume(mesh) > 0
+
+
+UNIT_SPHERE = {
+    "name": "Esfera",
+    "expression": "x**2 + y**2 + z**2 - 1",
+    "domain": [[-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5]],
+    "resolution": 16,
+}
+
+
+async def create_unit_sphere(client, headers) -> int:
+    return (await client.post("/functions", json=UNIT_SPHERE, headers=headers)).json()["id"]
+
+
+async def test_volume_accepts_a_resolution_override(client):
+    _, headers = await register_and_login(client, "ana")
+    function_id = await create_unit_sphere(client, headers)
+    expected = estimate_volume(UNIT_SPHERE["expression"], UNIT_SPHERE["domain"], 32)
+
+    response = await client.get(f"/functions/{function_id}/volume", params={"resolution": 32}, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolution"] == 32
+    assert body["mesh_volume"] == pytest.approx(expected.mesh_volume)
+    assert body["voxel_volume"] == pytest.approx(expected.voxel_volume)
+
+
+async def test_volume_resolution_override_does_not_modify_the_function(client):
+    _, headers = await register_and_login(client, "ana")
+    function_id = await create_unit_sphere(client, headers)
+
+    await client.get(f"/functions/{function_id}/volume", params={"resolution": 32}, headers=headers)
+
+    stored = (await client.get(f"/functions/{function_id}", headers=headers)).json()
+    default = (await client.get(f"/functions/{function_id}/volume", headers=headers)).json()
+    assert stored["resolution"] == 16 and stored["version"] == 1
+    assert default["resolution"] == 16
+
+
+async def test_volume_results_are_cached_per_resolution(client):
+    _, headers = await register_and_login(client, "ana")
+    function_id = await create_unit_sphere(client, headers)
+    url = f"/functions/{function_id}/volume"
+
+    coarse = (await client.get(url, params={"resolution": 16}, headers=headers)).json()
+    fine = (await client.get(url, params={"resolution": 32}, headers=headers)).json()
+    coarse_again = (await client.get(url, params={"resolution": 16}, headers=headers)).json()
+
+    assert fine["mesh_volume"] != coarse["mesh_volume"]
+    assert coarse_again["mesh_volume"] == coarse["mesh_volume"]
+    assert coarse_again["resolution"] == 16
+
+
+@pytest.mark.parametrize("resolution", [4, 65], ids=["bajo-el-minimo", "sobre-el-maximo"])
+async def test_volume_resolution_override_respects_configured_limits(client, monkeypatch, resolution):
+    monkeypatch.setattr(get_settings(), "max_resolution", 64)
+    _, headers = await register_and_login(client, "ana")
+    function_id = await create_unit_sphere(client, headers)
+
+    response = await client.get(
+        f"/functions/{function_id}/volume", params={"resolution": resolution}, headers=headers
+    )
+
+    assert response.status_code == 422
