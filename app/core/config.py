@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +22,9 @@ class Settings(BaseSettings):
 
     default_resolution: int = 64
     min_resolution: int = 8
-    max_resolution: int = 2048
+    max_resolution: int = 256
     max_expression_length: int = 500
+    max_concurrent_computations: int = Field(default=2, ge=1)
 
     cache_max_items: int = 128
 

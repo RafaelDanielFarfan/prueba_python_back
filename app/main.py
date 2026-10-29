@@ -2,8 +2,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
@@ -14,6 +14,7 @@ from app.functions.examples_router import router as examples_router
 from app.functions.router import router as functions_router
 from app.users.auth_router import router as auth_router
 from app.users.router import router as users_router
+from app.volumes.limiter import ServerBusyError
 from app.volumes.router import router as volumes_router
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -34,6 +35,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestLoggingMiddleware)
+
+
+@app.exception_handler(ServerBusyError)
+async def server_busy_handler(request: Request, _: ServerBusyError) -> JSONResponse:
+    logger.warning("server_busy", method=request.method, path=request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "El servidor está ocupado calculando; reintenta en unos segundos"},
+        headers={"Retry-After": "2"},
+    )
+
+
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(examples_router)

@@ -46,7 +46,9 @@ def build_axes(domain: list[list[float]], resolution: int) -> list[FloatArray]:
 def sample_function(expression: str, domain: list[list[float]], resolution: int) -> SampledGrid:
     axes = build_axes(domain, resolution)
     # Indexado matricial: values[i, j, k] = f(x_i, y_j, z_k), el orden que espera marching_cubes.
-    x, y, z = np.meshgrid(*axes, indexing="ij")
+    # sparse=True: cada eje queda como un vector (n, 1, 1), (1, n, 1) o (1, 1, n) y numpy los
+    # combina por broadcasting, sin materializar tres matrices completas de n³ muestras.
+    x, y, z = np.meshgrid(*axes, indexing="ij", sparse=True)
     values = compile_expression(expression)(x, y, z)
     non_finite = values.size - int(np.count_nonzero(np.isfinite(values)))
     if non_finite:
