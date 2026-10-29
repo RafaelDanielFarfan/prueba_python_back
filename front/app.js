@@ -94,6 +94,7 @@ function signOut() {
   document.getElementById("function-info").hidden = true;
   document.getElementById("volumes").hidden = true;
   document.getElementById("surface").hidden = true;
+  document.getElementById("convergence").hidden = true;
   document.getElementById("select-hint").hidden = false;
   showLogin();
 }
@@ -330,6 +331,73 @@ async function loadSurface(id) {
   }
 }
 
+const CONVERGENCE_RESOLUTIONS = [32, 64, 128, 256];
+const BUSY_RETRIES = 2;
+const BUSY_WAIT_MS = 2000;
+
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function buildConvergenceRows() {
+  const body = document.getElementById("convergence-body");
+  body.replaceChildren();
+  for (const n of CONVERGENCE_RESOLUTIONS) {
+    const row = document.createElement("tr");
+    row.dataset.testid = "convergence-row";
+    row.dataset.n = n;
+    const cells = [
+      [null, String(n)],
+      ["convergence-mesh", "…"],
+      ["convergence-voxel", "…"],
+    ];
+    for (const [testId, text] of cells) {
+      const cell = document.createElement("td");
+      if (testId) cell.dataset.testid = testId;
+      cell.textContent = text;
+      row.append(cell);
+    }
+    body.append(row);
+  }
+}
+
+function setConvergenceRow(n, mesh, voxel) {
+  const row = document.querySelector(`[data-testid="convergence-row"][data-n="${n}"]`);
+  row.querySelector('[data-testid="convergence-mesh"]').textContent = mesh;
+  row.querySelector('[data-testid="convergence-voxel"]').textContent = voxel;
+}
+
+// Si la API está ocupada (503) se espera y se reintenta unas pocas veces antes de rendirse.
+async function fetchVolumeAt(id, n) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await (await authorized(`/functions/${id}/volume?resolution=${n}`)).json();
+    } catch (error) {
+      if (error.status !== 503 || attempt >= BUSY_RETRIES) throw error;
+      await sleep(BUSY_WAIT_MS);
+      if (state.selectedId !== id) return null;
+    }
+  }
+}
+
+async function loadConvergence(id) {
+  document.getElementById("convergence").hidden = false;
+  buildConvergenceRows();
+  // En serie y de menor a mayor resolución: la API admite pocos cálculos simultáneos.
+  for (const n of CONVERGENCE_RESOLUTIONS) {
+    try {
+      const volume = await fetchVolumeAt(id, n);
+      if (state.selectedId !== id) return;
+      const mesh = requireFinite(volume.mesh_volume, `el volumen por malla con n = ${n}`);
+      const voxel = requireFinite(volume.voxel_volume, `el volumen por vóxeles con n = ${n}`);
+      setConvergenceRow(n, formatNumber(mesh), formatNumber(voxel));
+    } catch (error) {
+      if (state.selectedId !== id) return;
+      setConvergenceRow(n, "—", "—");
+      showError(`Convergencia, n = ${n}: ${error.message}`);
+      if (error.status === 401) return;
+    }
+  }
+}
+
 async function selectFunction(id) {
   state.selectedId = id;
   clearError();
@@ -338,6 +406,7 @@ async function selectFunction(id) {
   // En serie: la API admite pocos cálculos simultáneos y respondería 503 si se piden a la vez.
   await loadVolumes(id);
   await loadSurface(id);
+  await loadConvergence(id);
 }
 
 async function openPanel() {
