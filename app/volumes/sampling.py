@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.core.logging import get_logger
 from app.functions.parser import FloatArray, compile_expression
+
+logger = get_logger(__name__)
 
 Vector3 = tuple[float, float, float]
 
@@ -45,6 +48,9 @@ def sample_function(expression: str, domain: list[list[float]], resolution: int)
     # Indexado matricial: values[i, j, k] = f(x_i, y_j, z_k), el orden que espera marching_cubes.
     x, y, z = np.meshgrid(*axes, indexing="ij")
     values = compile_expression(expression)(x, y, z)
+    non_finite = values.size - int(np.count_nonzero(np.isfinite(values)))
+    if non_finite:
+        logger.warning("non_finite_samples", count=non_finite, total=values.size, resolution=resolution)
 
     return SampledGrid(
         values=values,

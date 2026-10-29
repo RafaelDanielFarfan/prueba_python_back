@@ -9,6 +9,7 @@ from app.volumes.sampling import SampledGrid
 
 ISO_LEVEL = 0.0
 OUTSIDE_FACTOR = 1e6
+FINITE_LIMIT = 1e12
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,16 @@ class TriangleMesh:
         return len(self.faces) == 0
 
 
+def _bounded(values: FloatArray) -> FloatArray:
+    """Sustituye los valores no finitos para que marching cubes interpole sin NaN ni infinitos.
+
+    Donde f no está definida (NaN) la muestra no pertenece a la región f ≤ 0, así que cuenta como
+    "fuera". Los infinitos y los valores enormes se acotan conservando el signo.
+    """
+    finite = np.nan_to_num(values, nan=FINITE_LIMIT, posinf=FINITE_LIMIT, neginf=-FINITE_LIMIT)
+    return np.clip(finite, -FINITE_LIMIT, FINITE_LIMIT)
+
+
 def _close_at_boundary(values: FloatArray) -> FloatArray:
     """Rodea la rejilla con una capa exterior para que la superficie se cierre en las caras del dominio.
 
@@ -28,14 +39,13 @@ def _close_at_boundary(values: FloatArray) -> FloatArray:
     la capa cae casi sobre la cara del dominio, y el corte queda donde corresponde. Con un valor
     moderado el cruce se desplazaría hacia dentro y deformaría la superficie cerca del borde.
     """
-    finite = values[np.isfinite(values)]
-    scale = max(float(np.abs(finite).max()), 1.0) if finite.size else 1.0
+    scale = max(float(np.abs(values).max()), 1.0)
     return np.pad(values, 1, constant_values=OUTSIDE_FACTOR * scale)
 
 
 def extract_mesh(grid: SampledGrid) -> TriangleMesh:
     """Extrae la superficie f = 0 con marching cubes; la malla es cerrada aunque toque el borde."""
-    values = grid.values
+    values = _bounded(grid.values)
     if values.min() > ISO_LEVEL:
         return TriangleMesh(vertices=np.empty((0, 3)), faces=np.empty((0, 3), dtype=np.int64))
 

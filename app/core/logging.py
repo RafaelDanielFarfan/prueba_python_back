@@ -1,8 +1,6 @@
 import logging
 import sys
-import warnings
 
-import numpy as np
 import structlog
 
 
@@ -11,9 +9,6 @@ def configure_logging(level: str = "INFO", is_json: bool = True) -> None:
     renderer = structlog.processors.JSONRenderer() if is_json else structlog.dev.ConsoleRenderer()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=log_level)
-    # Las advertencias de punto flotante de numpy inundan la salida al evaluar rejillas grandes.
-    np.seterr(all="ignore")
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
