@@ -1,4 +1,6 @@
-from fastapi import APIRouter, status
+import math
+
+from fastapi import APIRouter, HTTPException, status
 
 from app.core.logging import get_logger
 from app.functions import service
@@ -39,4 +41,9 @@ async def update_function(function: OwnedFunction, data: FunctionUpdate, session
 @router.get("/{function_id}/evaluate")
 async def evaluate_function(function: OwnedFunction, x: float, y: float, z: float) -> PointEvaluation:
     value = evaluate_point(function.expression, x, y, z)
+    if not math.isfinite(value):
+        logger.warning("evaluate_non_finite", function_id=function.id, point=[x, y, z])
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="La función no tiene un valor finito en ese punto"
+        )
     return PointEvaluation(x=x, y=y, z=z, value=value, is_inside=value <= 0)

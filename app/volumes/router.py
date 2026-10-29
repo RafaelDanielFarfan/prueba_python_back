@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Response
 
 from app.core.logging import get_logger
@@ -5,6 +7,7 @@ from app.core.time import now_formatted
 from app.functions.dependencies import OwnedFunction
 from app.volumes.binary import encode_mesh
 from app.volumes.cache import mesh_cache, volume_cache
+from app.volumes.limiter import compute_limiter
 from app.volumes.mesh import extract_mesh
 from app.volumes.sampling import sample_function
 from app.volumes.schemas import VolumeResult
@@ -16,9 +19,15 @@ logger = get_logger(__name__)
 
 @router.get("/{function_id}/volume")
 async def get_volume(function: OwnedFunction) -> VolumeResult:
-    estimate: VolumeEstimate = volume_cache.get_or_compute(
-        (function.id, function.version),
-        lambda: estimate_volume(function.expression, function.domain, function.resolution),
+    expression, domain, resolution = function.expression, function.domain, function.resolution
+
+    def compute() -> VolumeEstimate:
+        with compute_limiter.slot():
+            return estimate_volume(expression, domain, resolution)
+
+    # El cálculo es CPU puro y síncrono: en un hilo para no bloquear el event loop.
+    estimate: VolumeEstimate = await asyncio.to_thread(
+        volume_cache.get_or_compute, (function.id, function.version), compute
     )
     logger.info(
         "volume_computed",
@@ -39,11 +48,14 @@ async def get_volume(function: OwnedFunction) -> VolumeResult:
 @router.get("/{function_id}/mesh.bin", response_class=Response)
 async def get_mesh(function: OwnedFunction) -> Response:
 
+    expression, domain, resolution = function.expression, function.domain, function.resolution
+
     def build_payload() -> bytes:
-        grid = sample_function(function.expression, function.domain, function.resolution)
-        mesh = extract_mesh(grid)
+        with compute_limiter.slot():
+            grid = sample_function(expression, domain, resolution)
+            mesh = extract_mesh(grid)
         logger.info("mesh_generated", function_id=function.id, faces=len(mesh.faces))
         return encode_mesh(mesh)
 
-    payload = mesh_cache.get_or_compute((function.id, function.version), build_payload)
+    payload = await asyncio.to_thread(mesh_cache.get_or_compute, (function.id, function.version), build_payload)
     return Response(content=payload, media_type="application/octet-stream")

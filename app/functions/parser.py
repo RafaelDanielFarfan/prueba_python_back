@@ -108,8 +108,12 @@ def compile_expression(expression: str) -> ImplicitCallable:
     code = _compile(expression)
 
     def evaluate(x: FloatArray, y: FloatArray, z: FloatArray) -> FloatArray:
+        x, y, z = (np.asarray(axis, dtype=np.float64) for axis in (x, y, z))
         namespace = {**ALLOWED_NAMES, "x": x, "y": y, "z": z}
-        result = eval(code, SAFE_GLOBALS, namespace)  # noqa: S307
+        # División por cero, raíces negativas o desbordes dan inf/nan en numpy en lugar de lanzar
+        # excepciones; quien consume el resultado decide qué hacer con los valores no finitos.
+        with np.errstate(all="ignore"):
+            result = eval(code, SAFE_GLOBALS, namespace)  # noqa: S307
         return np.broadcast_to(np.asarray(result, dtype=np.float64), np.broadcast(x, y, z).shape)
 
     return evaluate
