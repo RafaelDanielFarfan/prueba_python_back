@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.core.logging import get_logger
 from app.functions.parser import FloatArray, compile_expression
+
+logger = get_logger(__name__)
 
 Vector3 = tuple[float, float, float]
 
@@ -27,12 +30,12 @@ def grid_origin(domain: list[list[float]]) -> Vector3:
 
 
 def grid_spacing(domain: list[list[float]], resolution: int) -> Vector3:
-    """Tamaño de celda por eje, calculado directamente del dominio sin materializar los ejes."""
+    """Distancia entre muestras por eje: ``resolution`` puntos delimitan ``resolution - 1`` intervalos."""
     (x_min, x_max), (y_min, y_max), (z_min, z_max) = domain
     return (
-        (x_max - x_min) / resolution,
-        (y_max - y_min) / resolution,
-        (z_max - z_min) / resolution,
+        (x_max - x_min) / (resolution - 1),
+        (y_max - y_min) / (resolution - 1),
+        (z_max - z_min) / (resolution - 1),
     )
 
 
@@ -42,9 +45,14 @@ def build_axes(domain: list[list[float]], resolution: int) -> list[FloatArray]:
 
 def sample_function(expression: str, domain: list[list[float]], resolution: int) -> SampledGrid:
     axes = build_axes(domain, resolution)
-    # Indexado cartesiano: mismo convenio de ejes que el visor (three.js, X derecha / Y arriba).
-    x, y, z = np.meshgrid(*axes, indexing="xy")
+    # Indexado matricial: values[i, j, k] = f(x_i, y_j, z_k), el orden que espera marching_cubes.
+    # sparse=True: cada eje queda como un vector (n, 1, 1), (1, n, 1) o (1, 1, n) y numpy los
+    # combina por broadcasting, sin materializar tres matrices completas de n³ muestras.
+    x, y, z = np.meshgrid(*axes, indexing="ij", sparse=True)
     values = compile_expression(expression)(x, y, z)
+    non_finite = values.size - int(np.count_nonzero(np.isfinite(values)))
+    if non_finite:
+        logger.warning("non_finite_samples", count=non_finite, total=values.size, resolution=resolution)
 
     return SampledGrid(
         values=values,

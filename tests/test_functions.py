@@ -1,3 +1,4 @@
+from app.core.config import get_settings
 from tests.helpers import register_and_login
 
 SPHERE = {
@@ -82,10 +83,20 @@ async def test_evaluate_point_inside_and_on_surface(client):
     assert outside["is_inside"] is False
 
 
-async def test_create_accepts_high_resolution(client):
+async def test_create_accepts_the_maximum_configured_resolution(client):
     _, headers = await register_and_login(client, "ana")
+    maximum = get_settings().max_resolution
 
-    response = await client.post("/functions", json={**SPHERE, "resolution": 1024}, headers=headers)
+    response = await client.post("/functions", json={**SPHERE, "resolution": maximum}, headers=headers)
 
     assert response.status_code == 201
-    assert response.json()["resolution"] == 1024
+    assert response.json()["resolution"] == maximum
+
+
+async def test_create_rejects_attribute_access_in_expression(client):
+    _, headers = await register_and_login(client, "ana")
+    payload = {**SPHERE, "expression": "().__class__.__base__.__subclasses__().__len__() * 0 + x"}
+
+    response = await client.post("/functions", json=payload, headers=headers)
+
+    assert response.status_code == 422

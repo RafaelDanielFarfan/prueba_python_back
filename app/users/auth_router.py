@@ -15,11 +15,16 @@ logger = get_logger(__name__)
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(data: UserCreate, session: SessionDep) -> UserRead:
+    conflict = HTTPException(status.HTTP_409_CONFLICT, detail="El usuario o el email ya existen")
     if await service.exists_user(session, data.username, data.email):
         logger.warning("register_conflict", username=data.username)
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="El usuario o el email ya existen")
+        raise conflict
 
-    user = await service.create_user(session, data)
+    try:
+        user = await service.create_user(session, data)
+    except service.UserAlreadyExistsError:
+        logger.warning("register_conflict_concurrent", username=data.username)
+        raise conflict from None
     logger.info("user_registered", user_id=user.id)
     return UserRead.model_validate(user)
 
