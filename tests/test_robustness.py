@@ -1,7 +1,10 @@
+import asyncio
 import math
+import time
 
 import pytest
 
+from app.volumes import router as volumes_router
 from app.volumes.volume import estimate_volume
 from tests.helpers import register_and_login
 
@@ -53,3 +56,37 @@ async def test_evaluate_rejects_non_finite_values_with_422(client, expression, p
 
     assert response.status_code == 422
     assert "finito" in response.json()["detail"]
+
+
+async def longest_event_loop_stall(until: asyncio.Task) -> float:
+    """Mayor intervalo entre dos pulsos del event loop mientras ``until`` no termina."""
+    longest, last = 0.0, time.perf_counter()
+    while not until.done():
+        await asyncio.sleep(0.01)
+        now = time.perf_counter()
+        longest, last = max(longest, now - last), now
+    return longest
+
+
+@pytest.mark.parametrize(
+    "path, slowed",
+    [("volume", "estimate_volume"), ("mesh.bin", "sample_function")],
+    ids=["volumen", "malla"],
+)
+async def test_heavy_computation_does_not_block_the_event_loop(client, monkeypatch, path, slowed):
+    original = getattr(volumes_router, slowed)
+
+    def slow(*args, **kwargs):
+        time.sleep(0.5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(volumes_router, slowed, slow)
+    _, headers = await register_and_login(client, "ana")
+    payload = {"name": "Esfera", "expression": "x**2 + y**2 + z**2 - 1", "domain": CUBE, "resolution": 16}
+    created = (await client.post("/functions", json=payload, headers=headers)).json()
+
+    request = asyncio.create_task(client.get(f"/functions/{created['id']}/{path}", headers=headers))
+    stall = await longest_event_loop_stall(request)
+
+    assert (await request).status_code == 200
+    assert stall < 0.25
