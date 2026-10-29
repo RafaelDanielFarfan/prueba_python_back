@@ -1,204 +1,135 @@
-# Prueba de desarrollador backend con FastAPI — v2
+# API de volúmenes de funciones implícitas
 
-> La versión anterior del enunciado se conserva en [`docs/legacy/README_v1.md`](docs/legacy/README_v1.md) solo como referencia histórica.
+API con FastAPI que permite a usuarios autenticados registrar **funciones implícitas** `f(x, y, z)`, calcular el **volumen** de la región `f(x, y, z) ≤ 0` dentro de un dominio acotado y **visualizarla en 3D**. Incluye un panel web (`front/`) que muestra los resultados.
 
-En esta prueba trabajarás sobre una API existente, construida con FastAPI, que permite a usuarios autenticados registrar **funciones implícitas** `f(x, y, z)`, calcular el **volumen** de la región `f(x, y, z) ≤ 0` dentro de un dominio acotado y **visualizarla en 3D** en el navegador.
+El enunciado de la prueba está en [`docs/enunciado.md`](docs/enunciado.md).
 
-El repositorio ya contiene una implementación parcial. Tu trabajo consiste en completarla, corregirla y dejarla lista para producción.
+## Contenido
 
-## Objetivo de la prueba
+- [Requisitos](#requisitos)
+- [Backend: ejecutar y probar](#backend-ejecutar-y-probar)
+- [Front: instalar y arrancar](#front-instalar-y-arrancar)
+- [Datos de demostración](#datos-de-demostración)
+- [Endpoints](#endpoints)
+- [Configuración](#configuración)
+- [Tabla de convergencia (tarea C)](#tabla-de-convergencia-tarea-c)
+- [Decisiones técnicas](#decisiones-técnicas)
+- [Limitaciones conocidas](#limitaciones-conocidas)
 
-Evaluar tu capacidad para:
-
-- Leer, entender y razonar sobre código existente.
-- Diseñar e implementar endpoints con FastAPI siguiendo buenas prácticas.
-- Validar que los resultados que entrega tu código son correctos, no solo que el código "corre".
-- Trabajar con Git de forma ordenada y profesional.
-
-**Se permite el uso de asistentes de IA.** Sin embargo, eres responsable de cada línea que entregues. En la sustentación deberás explicar cualquier parte del código y cualquier commit de tu historial.
-
-## Metodología
+## Requisitos
 
 - Python 3.12 gestionado con [`uv`](https://docs.astral.sh/uv/).
-- FastAPI + Pydantic v2.
-- **PostgreSQL 16 como base de datos (requisito obligatorio)**, con acceso asíncrono mediante SQLAlchemy 2 y `asyncpg`. Se incluye `docker/compose.yml` para levantarla en local.
-- Toda configuración se lee de variables de entorno (ver `.env.example`). No se aceptan valores sensibles en el código.
-- Tests con `pytest` contra una base PostgreSQL de pruebas, separada de la de desarrollo. No se aceptan tests de integración sobre SQLite.
+- Docker con Compose para PostgreSQL 16. En macOS sin Docker Desktop sirve [Colima](https://github.com/abiosoft/colima): `brew install colima docker docker-compose && colima start`.
+- Python 3 para servir el front (solo biblioteca estándar, no hay dependencias que instalar).
+- Un navegador con WebGL y acceso a `cdn.jsdelivr.net` (Three.js se carga desde allí).
 
-### Puesta en marcha
+## Backend: ejecutar y probar
 
 ```bash
-cp .env.example .env            # completa los valores
+cp .env.example .env            # completa los valores (usuario, contraseña, bases y clave secreta)
 docker compose -f docker/compose.yml --env-file .env up -d --wait
 uv sync
 uv run pytest
 uv run uvicorn app.main:app --reload
 ```
 
-## Conceptos
+- La API queda en `http://localhost:8000` y la documentación interactiva en `http://localhost:8000/docs`.
+- Los tests usan una base PostgreSQL **distinta** de la de desarrollo (`APP_TEST_DATABASE_URL`); se vacía al empezar cada test.
+- La clave secreta se genera con `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Nunca se sube al repositorio: `.env` está en `.gitignore`.
+- `docker/postgres/init/01-create-test-db.sh` crea la base de pruebas solo la primera vez que arranca el contenedor. Si cambias su nombre después, hay que crearla a mano o borrar el volumen (`docker compose ... down -v`, que elimina los datos).
 
-Una **función implícita** es una expresión en las variables `x`, `y`, `z`. La superficie `f(x, y, z) = 0` separa el espacio en dos regiones; nos interesa la región **interior**, `f(x, y, z) ≤ 0`.
+## Front: instalar y arrancar
 
-Cada función se guarda con:
+El panel es HTML, CSS y JavaScript sin paso de compilación: no hay nada que instalar.
 
-| Campo | Descripción |
-|---|---|
-| `name` | Nombre descriptivo |
-| `expression` | Expresión en `x`, `y`, `z` (ver operadores permitidos) |
-| `domain` | Caja `[[xmin, xmax], [ymin, ymax], [zmin, zmax]]` donde se evalúa |
-| `resolution` | Número de muestras por eje de la rejilla regular |
+```bash
+API_URL=http://localhost:8000 python3 front/serve.py
+```
 
-### Operadores y funciones permitidos en `expression`
+- **URL del panel:** `http://localhost:5173` (cambia el puerto con `PORT`).
+- **Variable de entorno de la URL de la API:** `API_URL` (por defecto `http://localhost:8000`). El servidor la publica en `/config.js`.
+- **CORS:** el panel está en un origen distinto al de la API, por lo que esta debe permitirlo. En el `.env` del backend pon `APP_CORS_ORIGINS=http://localhost:5173` y reinicia la API.
 
-| Elemento | Permitido |
-|---|---|
-| Variables | `x`, `y`, `z` |
-| Constantes | números reales, `pi`, `e` |
-| Aritmética | `+`, `-`, `*`, `/`, `**` |
-| Funciones | `sin`, `cos`, `tan`, `sqrt`, `exp`, `log`, `abs` |
+Con la API y el front arrancados, inicia sesión con un usuario que tenga funciones (ver [Datos de demostración](#datos-de-demostración)). El panel permite:
 
-Cualquier otra construcción debe ser rechazada.
+1. Iniciar sesión (`POST /auth/token`).
+2. Ver la lista de funciones del usuario.
+3. Seleccionar una función y ver `mesh_volume`, `voxel_volume`, `domain_volume` y la diferencia relativa `100 · |mesh − voxel| / |mesh|`.
+4. Ver la superficie en 3D (arrastrar para rotar, rueda para acercar).
+5. Ver la tabla de convergencia para n = 32, 64, 128 y 256.
+6. Mensajes de error comprensibles para 401, 404, 422, 503, fallos de conexión y valores no finitos.
 
-### Ejemplos
+Los valores se muestran con 6 cifras significativas. Los elementos del contrato llevan su `data-testid` (`login-username`, `login-password`, `login-submit`, `function-list`, `function-item`, `volume-mesh`, `volume-voxel`, `volume-domain`, `volume-difference`, `surface-view`, `convergence-table`, `convergence-row` con `data-n`, `convergence-mesh`, `convergence-voxel`, `error-message`).
 
-| Nombre | Expresión | Dominio sugerido |
-|---|---|---|
-| Esfera | `x**2 + y**2 + z**2 - 1` | `[-1.5, 1.5]³` |
-| Toro | `(sqrt(x**2 + y**2) - 1)**2 + z**2 - 0.25**2` | `[-1.5, 1.5]³` |
-| Gyroide | `sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)` | `[0, 2*pi]³` |
-| Esfera recíproca | `1 - 1/(x**2 + y**2 + z**2)` | `[-2, 2]³` |
-| Rampa tangente | `tan(x) - z` | `[0, 3]³` |
-| Hipérbola | `1/x - y` | `[-2, 2]³` |
+## Datos de demostración
+
+El panel solo muestra funciones ya registradas. Para dejar un usuario listo con los seis ejemplos del enunciado (con la API en marcha):
+
+```bash
+curl -s -X POST localhost:8000/auth/register -H 'Content-Type: application/json' \
+  -d '{"username":"demo","email":"demo@example.com","password":"demo-pass-123"}'
+
+TOKEN=$(curl -s -X POST localhost:8000/auth/token -d 'username=demo&password=demo-pass-123' \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+
+for slug in esfera toro gyroide esfera-reciproca rampa-tangente hiperbola; do
+  curl -s -X POST "localhost:8000/functions/examples/$slug" -H "Authorization: Bearer $TOKEN" > /dev/null
+done
+```
+
+Para una función lejana del origen (tarea D), por ejemplo desde `/docs` con `POST /functions`:
+
+```json
+{
+  "name": "Esfera lejana",
+  "expression": "(x - 600000)**2 + y**2 + z**2 - 0.25",
+  "domain": [[599999, 600001], [-1, 1], [-1, 1]],
+  "resolution": 64
+}
+```
 
 ## Endpoints
 
 | Método y ruta | Descripción |
 |---|---|
 | `POST /auth/register` | Registro de usuario |
-| `POST /auth/token` | Login; devuelve un JWT |
-| `GET /users/{id}` | Información del usuario. Incluye `generated_at` con la fecha y hora actual (UTC) en formato `YYYY-MM-DD HH:MM:SS` |
-| `POST /functions` · `GET /functions` | Crear y listar **las funciones del usuario autenticado** |
+| `POST /auth/token` | Login (formulario `username` y `password`); devuelve un JWT |
+| `GET /users/{id}` | Información del usuario, con `generated_at` (UTC, `YYYY-MM-DD HH:MM:SS`) |
+| `POST /functions` · `GET /functions` | Crear y listar las funciones del usuario autenticado |
 | `GET /functions/{id}` · `PATCH /functions/{id}` | Consultar y editar una función propia |
-| `GET /functions/{id}/evaluate?x=&y=&z=` | Valor de `f` en un punto |
-| `GET /functions/{id}/volume` | Volumen de la región `f ≤ 0` dentro del dominio |
-| `GET /functions/{id}/mesh.bin` | Malla triangular de la superficie `f = 0` en formato binario |
-| `GET /viewer?fn={id}` | Visor 3D de la función |
+| `GET /functions/examples` · `POST /functions/examples/{slug}` | Listar y registrar los ejemplos |
+| `GET /functions/{id}/evaluate?x=&y=&z=` | Valor de `f` en un punto (422 si no es finito) |
+| `GET /functions/{id}/volume[?resolution=n]` | Volumen de `f ≤ 0` en el dominio. `resolution` es opcional y no modifica la función |
+| `GET /functions/{id}/mesh.bin` | Malla triangular de `f = 0` en formato binario |
+| `GET /viewer?fn={id}` | Visor 3D simple servido por la propia API |
+| `GET /health` | Estado del servicio |
 
-### Formato de respuesta de `GET /functions/{id}/volume`
+Respuesta de `/volume`: `function_id`, `resolution` (la usada), `mesh_volume` (valor de referencia), `voxel_volume`, `domain_volume` y `generated_at`.
 
-Objeto JSON con estos campos:
+Un usuario solo puede ver, editar, evaluar y visualizar sus propias funciones; las ajenas responden 404, igual que las inexistentes.
 
-| Campo | Descripción |
-|---|---|
-| `function_id` | Id de la función |
-| `resolution` | Resolución usada en el cálculo |
-| `mesh_volume` | Volumen calculado a partir de la malla de la superficie `f = 0`. Es el **valor de referencia** de la prueba |
-| `voxel_volume` | Volumen estimado contando los puntos de la rejilla con `f ≤ 0` |
-| `domain_volume` | Volumen de la caja del dominio |
-| `generated_at` | Fecha y hora actual (UTC), formato `YYYY-MM-DD HH:MM:SS` |
+## Configuración
 
-Puedes añadir campos, pero estos deben mantenerse.
+Toda la configuración se lee de variables de entorno (ver [`.env.example`](.env.example)).
 
-## Requisitos generales
-
-1. Un usuario **solo** puede ver, editar, evaluar y visualizar sus propias funciones.
-2. Todo error debe registrarse con logs estructurados.
-3. La API nunca debe responder `500` ante una expresión válida.
-4. El servicio debe seguir respondiendo a otras peticiones mientras calcula volúmenes o mallas.
-5. Los límites de recursos (por ejemplo, la resolución máxima) deben ser configurables por variables de entorno.
-6. Si el front se sirve desde un origen distinto al de la API, los orígenes permitidos (CORS) deben configurarse por variable de entorno.
-
-## Tareas
-
-### A. Usuarios y autorización
-Completa el registro, el login y `GET /users/{id}`. Garantiza el requisito general 1 y demuéstralo con tests.
-
-### B. Expresiones
-Asegura que solo se aceptan las expresiones descritas en «Operadores y funciones permitidos». Las expresiones inválidas deben responder `422` con un mensaje claro.
-
-### C. Volumen
-`GET /functions/{id}/volume` debe ser correcto. Incluye en tu README una **tabla de convergencia** con el error relativo frente al valor analítico para la esfera, el toro y el gyroide, usando resoluciones 32, 64, 128 y 256. Explica cómo obtuviste los valores de referencia.
-
-### D. Malla y visor
-La superficie debe verse correctamente en `/viewer` para todos los ejemplos, incluso cuando el dominio está lejos del origen (por ejemplo, `x ∈ [599999, 600001]`).
-
-### E. Robustez y recursos
-Cumple los requisitos generales 3, 4 y 5.
-
-### F. Panel de resultados (front)
-Construye una interfaz web que muestre los resultados que genera tu API. **Puedes usar la tecnología que prefieras** (HTML y JavaScript, React, Vue, Svelte, etc.) y reutilizar o reemplazar el visor de `/viewer`.
-
-El panel debe permitir:
-
-1. Iniciar sesión con usuario y contraseña (`POST /auth/token`).
-2. Ver la lista de funciones del usuario autenticado.
-3. Seleccionar una función y ver su `mesh_volume`, su `voxel_volume`, su `domain_volume` y la **diferencia relativa** entre los dos primeros, expresada en porcentaje: `100 · |mesh_volume − voxel_volume| / |mesh_volume|`.
-4. Ver la superficie en 3D.
-5. Ver la **tabla de convergencia** de la función seleccionada para n = 32, 64, 128 y 256, con el volumen por malla y por vóxeles de cada fila.
-6. Mostrar mensajes de error comprensibles cuando la API responda `401`, `404`, `422` o `503`, o cuando un valor no sea un número finito.
-
-#### Contrato mínimo
-
-Para poder revisar tu front con independencia de la tecnología:
-
-- Tu `README.md` indica los comandos para instalarlo y arrancarlo, la URL en la que queda disponible y la variable de entorno que configura la URL de la API.
-- Estos elementos llevan el atributo `data-testid` indicado:
-
-| `data-testid` | Elemento |
-|---|---|
-| `login-username`, `login-password`, `login-submit` | Campos y botón del formulario de acceso |
-| `function-list` | Contenedor de la lista de funciones |
-| `function-item` | Cada función de la lista; su texto incluye el nombre |
-| `volume-mesh`, `volume-voxel`, `volume-domain` | Volúmenes de la función seleccionada |
-| `volume-difference` | Diferencia relativa, en porcentaje |
-| `surface-view` | Contenedor de la vista 3D |
-| `convergence-table` | Tabla de convergencia |
-| `convergence-row` | Cada fila de la tabla; lleva además el atributo `data-n` con el valor de n |
-| `convergence-mesh`, `convergence-voxel` | Celdas de la fila con el volumen por malla y por vóxeles |
-| `error-message` | Mensaje de error visible |
-
-- El texto de los valores numéricos incluye el número con al menos 4 cifras significativas.
-
-## Entregables
-
-1. Un **fork** de este repositorio con tu solución.
-2. **Una rama por tarea** (A–E), integrada a `develop` mediante Pull Request.
-3. **Commits atómicos realizados manualmente.** No se aceptan entregas con un único commit ni con *squash* de todo el trabajo. Cada mensaje de commit debe describir con precisión su contenido.
-4. Un `README.md` con:
-   - Descripción del proyecto y cómo ejecutarlo y probarlo.
-   - La tabla de convergencia de la tarea C.
-   - Cómo instalar y arrancar el front, la URL en la que queda y la variable de entorno que configura la URL de la API.
-5. **Sustentación** de 45 minutos, sin asistentes de IA:
-   - 20 min de demostración: levantar el proyecto y el front siguiendo tu README y mostrar los resultados.
-   - 25 min de preguntas sobre tu código, tus decisiones y tu historial de commits.
-
-## Recomendaciones sobre el uso de IA y la explicabilidad
-
-El uso de asistentes de inteligencia artificial está permitido como herramienta de apoyo durante el desarrollo, pero ten presente estas pautas fundamentales para la evaluación:
-
-1. **Responsabilidad y autoría sobre el código:** Eres el responsable final de cada línea, abstracción y prueba en tu entrega. Durante la sustentación se asumirá que comprendes a fondo la totalidad del código y su impacto en el sistema.
-2. **Explicabilidad por encima de la automatización:** La sesión en vivo se realiza **sin asistentes de IA** y evalúa tu criterio de ingeniería. Deberás poder explicar el porqué de tus decisiones técnicas, las alternativas que descartaste, predecir el comportamiento del sistema ante diversos escenarios y justificar el contenido de cada commit.
-3. **Validación crítica:** No asumas que el código generado por una IA es correcto únicamente porque "corre" o porque los tests existentes pasen en verde. Tu capacidad para verificar la exactitud de los resultados frente a valores teóricos, identificar posibles fallas de seguridad y optimizar el uso de recursos es el foco principal de la prueba.
-4. **Higiene del historial en Git:** Realiza tus commits manualmente y de forma atómica, asegurando que cada mensaje describa con precisión el diff correspondiente. El historial de commits debe reflejar un proceso de razonamiento gradual, no volcados masivos o automáticos.
-
-
----
-
-# Resultados de la tarea C: convergencia del volumen
-
-## Valores de referencia
-
-| Función | Valor de referencia | Cómo se obtiene |
+| Variable | Por defecto | Descripción |
 |---|---|---|
-| Esfera (`r = 1`) | `4/3 · π = 4.188790` | Fórmula exacta |
-| Toro (`R = 1`, `r = 0.25`) | `2π² · R · r² = 1.233701` | Fórmula exacta (teorema de Pappus) |
-| Gyroide en `[0, 2π]³` | `(2π)³ / 2 = 124.025107` | `f(x+π, y+π, z+π) = −f(x, y, z)`, por lo que la región `f ≤ 0` ocupa exactamente la mitad del dominio |
+| `APP_DATABASE_URL` | — | URL de la base de desarrollo (`postgresql+asyncpg://...`) |
+| `APP_TEST_DATABASE_URL` | — | URL de la base de pruebas |
+| `APP_SECRET_KEY` | — | Clave de firma de los JWT |
+| `APP_ACCESS_TOKEN_EXPIRE_MINUTES` | 30 | Vigencia del token |
+| `APP_DEFAULT_RESOLUTION` | 64 | Resolución por defecto al crear una función |
+| `APP_MIN_RESOLUTION` / `APP_MAX_RESOLUTION` | 8 / 256 | Límites de resolución (una rejilla de 2048³ ocuparía ~69 GB) |
+| `APP_MAX_EXPRESSION_LENGTH` | 500 | Longitud máxima de una expresión |
+| `APP_MAX_CONCURRENT_COMPUTATIONS` | 2 | Cálculos pesados simultáneos; si no hay hueco, la API responde 503 con `Retry-After` |
+| `APP_CACHE_MAX_ITEMS` | 128 | Entradas de la caché de resultados |
+| `APP_CORS_ORIGINS` | vacío | Orígenes permitidos, separados por comas |
+| `APP_LOG_LEVEL` / `APP_LOG_JSON` | INFO / true | Nivel y formato de los logs estructurados |
+| `API_URL` | `http://localhost:8000` | Solo para el front: URL de la API |
 
-El gyroide no tiene fórmula cerrada para su volumen, pero la simetría anterior permite deducirlo sin cálculo numérico: desplazar un punto `(π, π, π)` invierte el signo de `f`, así que la mitad del cubo cumple `f ≤ 0`.
+## Tabla de convergencia (tarea C)
 
-## Tabla de convergencia
-
-Error relativo `|V − V_ref| / V_ref`. Se genera con `uv run python -m scripts.convergence` (requiere el `.env` configurado).
+Error relativo `|V − V_ref| / V_ref`. Se regenera con `uv run python -m scripts.convergence` (requiere el `.env`).
 
 | Función | n | Volumen malla | Error malla | Volumen vóxel | Error vóxel |
 |---|---|---|---|---|---|
@@ -215,18 +146,67 @@ Error relativo `|V − V_ref| / V_ref`. Se genera con `uv run python -m scripts.
 | gyroide | 128 | 124.025162 | 4.49e-07 | 124.025167 | 4.88e-07 |
 | gyroide | 256 | 124.025122 | 1.24e-07 | 124.025114 | 6.03e-08 |
 
-## Lectura de los resultados
+### Valores de referencia
+
+| Función | Valor de referencia | Cómo se obtiene |
+|---|---|---|
+| Esfera (`r = 1`) | `4/3 · π = 4.188790` | Fórmula exacta |
+| Toro (`R = 1`, `r = 0.25`) | `2π² · R · r² = 1.233701` | Fórmula exacta (teorema de Pappus) |
+| Gyroide en `[0, 2π]³` | `(2π)³ / 2 = 124.025107` | `f(x+π, y+π, z+π) = −f(x, y, z)`: desplazar un punto `(π, π, π)` invierte el signo de `f`, así que la región `f ≤ 0` ocupa exactamente la mitad del dominio |
+
+El gyroide no tiene fórmula cerrada para su volumen, pero la simetría anterior permite deducirlo sin cálculo numérico.
+
+### Lectura de los resultados
 
 - **Malla (`mesh_volume`):** el error se divide aproximadamente por 4 al duplicar `n` (esfera: 7.1e-3, 1.7e-3, 4.2e-4, 1.0e-4), es decir, converge con orden 2. Por eso es el valor de referencia de la prueba.
-- **Vóxeles (`voxel_volume`):** el indicador `f ≤ 0` es discontinuo en la superficie, por lo que el error es de orden 1 y irregular (en el toro, de 128 a 256 casi no mejora). Es un estimador más grosero.
-- **Toro:** es la forma más delgada: con `n = 32` el tubo (radio 0.25) abarca unas 3 muestras, por lo que el error inicial es el mayor.
-- **Gyroide:** la superficie cruza las caras del dominio. La malla se cierra rodeando la rejilla con una capa exterior de valor muy grande, y los vóxeles de borde se ponderan con 1/2, 1/4 y 1/8 (regla del trapecio). Sin esas dos correcciones el volumen de malla daba ≈ 0 y el de vóxeles se sobrestimaba un 5 %.
+- **Vóxeles (`voxel_volume`):** el indicador `f ≤ 0` es discontinuo en la superficie, por lo que el error es de orden 1 e irregular (en el toro, de 128 a 256 casi no mejora).
+- **Toro:** es la forma más delgada; con `n = 32` el tubo (radio 0.25) abarca unas 3 muestras, por lo que su error inicial es el mayor.
 
-## Errores que se corrigieron para obtener estos valores
+## Decisiones técnicas
 
-1. El espaciado de la rejilla dividía por `n` en lugar de `n − 1` (la malla se encogía un `~3/n`).
-2. `np.meshgrid(indexing="xy")` intercambiaba los ejes `x` e `y` respecto a lo que espera `marching_cubes`; se usa `"ij"`.
-3. La malla quedaba abierta donde la superficie toca el borde del dominio.
-4. Los vóxeles del borde se contaban como celdas completas.
-5. El volumen de malla se reportaba con `abs()`, lo que ocultaba una orientación incorrecta.
-6. La caché usaba solo el id de la función como clave y devolvía resultados antiguos tras editarla.
+**A. Usuarios y autorización.** `get_owned_function` obtenía la función solo por id; ahora filtra por dueño en la capa de servicio y las ajenas responden 404 (no se revela que existan). El registro captura el `IntegrityError` del índice único (carrera entre dos registros simultáneos) y responde 409 en lugar de 500.
+
+**B. Expresiones.** El parser compilaba texto con `eval` y `__builtins__ = {}`, que no impide recorrer clases internas con `().__class__...`. Ahora se parsea a un AST y se valida con una lista blanca (`ast.NodeTransformer` que rechaza por defecto cualquier nodo): operadores `+ - * / **`, nombres `x y z pi e` y las siete funciones con un único argumento. Las constantes enteras se convierten a `float` para que `9**9**9**9` desborde en lugar de calcular un entero gigantesco.
+
+**C. Volumen.** La esfera con `n = 64` daba −4.8 % de error y el gyroide un volumen de malla de 8e-5 frente a 124. Causas corregidas:
+
+1. El espaciado dividía por `n` en lugar de `n − 1` (`linspace` genera `n` puntos y `n − 1` intervalos).
+2. `meshgrid(indexing="xy")` intercambiaba `x` e `y` respecto a lo que espera `marching_cubes`; se usa `"ij"`.
+3. La malla quedaba abierta donde la superficie cruza el borde del dominio, y la fórmula del volumen (teorema de la divergencia) exige una superficie cerrada. Se rodea la rejilla con una capa exterior de valor muy grande, de modo que el corte cae prácticamente sobre la cara del dominio.
+4. Los vóxeles del borde se contaban como celdas completas; ahora se ponderan con 1/2, 1/4 y 1/8 (regla del trapecio).
+5. El volumen de malla se reportaba con `abs()`, que ocultaba una posible mala orientación; ahora conserva el signo.
+6. La caché usaba solo el id de la función y devolvía datos antiguos tras un `PATCH`; ahora la clave es `(id, version, resolución)`.
+
+Los valores de `tests/golden/` se regeneraron porque los antiguos eran incorrectos, y se validaron contra los volúmenes analíticos.
+
+**D. Malla y visor.** Los vértices ya se envían relativos a un origen local, así que la forma no se deforma lejos del origen. Los defectos estaban en el formato binario (versión 3): los índices de cara eran `uint16` (se truncaban en silencio a partir de ~65 535 vértices) y el origen era `float32` (a 600 000 solo distingue pasos de 0.06). Ahora son `uint32` y `float64`.
+
+**E. Robustez y recursos.**
+
+- La evaluación usa `float64` de numpy con `np.errstate` local: `1/x` en `x = 0` ya no lanza `ZeroDivisionError`. Se elimina el `np.seterr` global. Una muestra `NaN` cuenta como "fuera" de la región, y los infinitos se acotan antes de marching cubes. `/evaluate` responde 422 si el valor no es finito.
+- El cálculo corre en un hilo (`asyncio.to_thread`) para no bloquear el event loop; los endpoints siguen siendo `async def`.
+- `APP_MAX_RESOLUTION` baja a 256, `APP_MAX_CONCURRENT_COMPUTATIONS` limita los cálculos simultáneos (503 con `Retry-After`) y `meshgrid(sparse=True)` reduce la memoria del muestreo.
+- CORS configurable con `APP_CORS_ORIGINS`.
+
+**F. Panel.** HTML y JavaScript sin build, para minimizar piezas. Las peticiones de la tabla de convergencia van en serie (el servidor admite pocos cálculos simultáneos) con reintento ante 503. Three.js se carga bajo demanda: si falla la red o WebGL, el resto del panel sigue funcionando. Los textos se insertan con `textContent`, nunca con `innerHTML`.
+
+### Desviaciones de `AGENTS.md`
+
+El enunciado manda sobre `AGENTS.md`. Varias de sus convenciones contradecían las correcciones anteriores:
+
+| Regla | Qué se hizo y por qué |
+|---|---|
+| 2. `indexing="xy"` | Se usa `"ij"`; `"xy"` cruzaba los ejes |
+| 3. No editar `tests/golden/` | Se regeneraron: los valores antiguos eran incorrectos y se validaron contra valores analíticos |
+| 4. Volumen siempre en valor absoluto | Se conserva el signo: un volumen negativo indica una malla mal orientada |
+| 5. Silenciar las advertencias de numpy globalmente | Se silencian solo dentro de la evaluación y se registran las muestras no finitas |
+| 6. Todo `async def` | Se mantiene, pero el cálculo pesado va en un hilo |
+| 8. Límite de resolución 2048 | Configurable; por defecto 256 (2048³ muestras ocuparían ~69 GB) |
+
+## Limitaciones conocidas
+
+- La caché y el límite de cálculos simultáneos son **por proceso**: con varios workers de uvicorn, cada uno tiene los suyos.
+- Donde la región `f ≤ 0` linda con una zona donde `f` no está definida (por ejemplo `sqrt(x) − 0.5` en `x = 0`), el borde tiene una incertidumbre de una celda.
+- Con un número impar de muestras, la hipérbola `1/x − y` incluye el plano `x = 0` (con `inf` en todas sus muestras) y su volumen de malla sale un 3 % por debajo del exacto. La rampa tangente tiene un polo en `x = π/2` y su volumen sale un 2 % por encima.
+- El volumen por vóxeles converge con orden 1; la malla (orden 2) es el valor de referencia.
+- El panel no tiene tests automáticos de navegador; se verificó a mano.
