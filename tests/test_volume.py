@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 
 from app.functions.examples import EXAMPLES_BY_SLUG
-from app.volumes.sampling import SampledGrid
-from app.volumes.volume import estimate_volume, voxel_volume
+from app.volumes.mesh import TriangleMesh, extract_mesh
+from app.volumes.sampling import SampledGrid, sample_function
+from app.volumes.volume import estimate_volume, mesh_volume, voxel_volume
 from tests.helpers import register_and_login
 
 GOLDEN = json.loads((Path(__file__).parent / "golden" / "volumes.json").read_text())
@@ -116,3 +117,24 @@ def test_voxel_volume_of_surface_cut_by_domain_boundary():
     estimate = estimate_volume(function.expression, function.domain, 64)
 
     assert estimate.voxel_volume == pytest.approx(expected, rel=1e-3)
+
+
+TETRAHEDRON_VERTICES = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+OUTWARD_FACES = np.array([[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]])
+
+
+def test_mesh_volume_is_signed_by_face_orientation():
+    outward = TriangleMesh(vertices=TETRAHEDRON_VERTICES, faces=OUTWARD_FACES)
+    inward = TriangleMesh(vertices=TETRAHEDRON_VERTICES, faces=OUTWARD_FACES[:, ::-1])
+
+    assert mesh_volume(outward) == pytest.approx(1 / 6)
+    assert mesh_volume(inward) == pytest.approx(-1 / 6)
+
+
+@pytest.mark.parametrize("slug", ["esfera", "toro", "gyroide"])
+def test_extracted_mesh_is_oriented_outward(slug):
+    function = EXAMPLES_BY_SLUG[slug].function
+
+    mesh = extract_mesh(sample_function(function.expression, function.domain, 32))
+
+    assert mesh_volume(mesh) > 0
