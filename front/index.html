@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel de volúmenes</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Panel de volúmenes</h1>
+    <span id="api-status" class="muted"></span>
+  </header>
+
+  <p class="error" data-testid="error-message" role="alert" hidden></p>
+
+  <main id="app">
+    <section id="login-section">
+      <form id="login-form" class="card">
+        <h2>Iniciar sesión</h2>
+        <label>Usuario
+          <input data-testid="login-username" name="username" autocomplete="username" required>
+        </label>
+        <label>Contraseña
+          <input data-testid="login-password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button data-testid="login-submit" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <section id="panel" hidden>
+      <aside class="card">
+        <div class="row">
+          <h2>Funciones</h2>
+          <button id="logout" type="button" class="secondary">Salir</button>
+        </div>
+        <div data-testid="function-list" class="function-list"></div>
+      </aside>
+
+      <div id="detail">
+        <p id="select-hint" class="muted">Selecciona una función para ver sus resultados.</p>
+        <section id="function-info" class="card" hidden>
+          <h2 id="function-name"></h2>
+          <dl id="function-fields"></dl>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

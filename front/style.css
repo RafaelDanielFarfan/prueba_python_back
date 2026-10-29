@@ -1,0 +1,102 @@
+:root {
+  --bg: #11151c;
+  --panel: #1b212b;
+  --text: #e6e9ef;
+  --muted: #8b95a5;
+  --accent: #4f9cf9;
+  --error: #f2706b;
+  --border: #2c3442;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font: 14px/1.5 system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+
+main { padding: 24px; }
+
+.muted { color: var(--muted); }
+
+.error {
+  margin: 16px 24px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  color: var(--error);
+}
+
+.error[hidden] { display: none; }
+
+input, button {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled { opacity: 0.6; cursor: wait; }
+
+.card {
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+[hidden] { display: none !important; }
+
+#login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 340px;
+  margin: 48px auto;
+}
+
+label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+
+button.secondary { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+#panel { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+
+.function-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+.function-list button { text-align: left; background: var(--bg); border: 1px solid var(--border); }
+
+.function-list button[aria-pressed="true"] { border-color: var(--accent); background: #1d2b42; }
+
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+
+dt { color: var(--muted); }
+
+dd { margin: 0; font-family: ui-monospace, monospace; word-break: break-all; }
+
+@media (max-width: 720px) { #panel { grid-template-columns: 1fr; } }
