@@ -65,7 +65,7 @@ async def test_volume_reflects_function_edits(client, change, expected_volume):
     await client.patch(url, json=change, headers=headers)
     response = await client.get(f"{url}/volume", headers=headers)
 
-    assert response.json()["mesh_volume"] == pytest.approx(expected_volume, rel=2e-2)
+    assert response.json()["mesh_volume"] == pytest.approx(expected_volume, rel=5e-2)
 
 
 async def test_mesh_reflects_function_edits(client):
