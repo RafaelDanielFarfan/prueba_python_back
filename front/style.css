@@ -100,3 +100,5 @@ dt { color: var(--muted); }
 dd { margin: 0; font-family: ui-monospace, monospace; word-break: break-all; }
 
 @media (max-width: 720px) { #panel { grid-template-columns: 1fr; } }
+
+#detail { display: flex; flex-direction: column; gap: 16px; }

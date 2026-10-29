@@ -91,6 +91,9 @@ function signOut() {
   setToken(null);
   state.functions = [];
   state.selectedId = null;
+  document.getElementById("function-info").hidden = true;
+  document.getElementById("volumes").hidden = true;
+  document.getElementById("select-hint").hidden = false;
   showLogin();
 }
 
@@ -146,11 +149,56 @@ function renderFunctionInfo(fn) {
   }
 }
 
-function selectFunction(id) {
+const VOLUME_CELLS = ["volume-mesh", "volume-voxel", "volume-domain", "volume-difference"];
+
+// Seis cifras significativas: el enunciado exige al menos cuatro.
+const formatNumber = (value) => value.toPrecision(6);
+
+function requireFinite(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`La API devolvió un valor que no es un número finito para ${label}.`);
+  }
+  return value;
+}
+
+// 100 · |malla − vóxeles| / |malla|; sin volumen de malla no hay con qué comparar.
+function relativeDifference(mesh, voxel) {
+  if (mesh === 0) {
+    throw new Error("El volumen por malla es cero: no se puede calcular la diferencia relativa.");
+  }
+  return (100 * Math.abs(mesh - voxel)) / Math.abs(mesh);
+}
+
+function setVolumeCells(texts) {
+  VOLUME_CELLS.forEach((testId, index) => {
+    $(testId).textContent = texts[index];
+  });
+}
+
+async function loadVolumes(id) {
+  document.getElementById("volumes").hidden = false;
+  setVolumeCells(VOLUME_CELLS.map(() => "Calculando…"));
+  try {
+    const volume = await (await authorized(`/functions/${id}/volume`)).json();
+    if (state.selectedId !== id) return;
+    const mesh = requireFinite(volume.mesh_volume, "el volumen por malla");
+    const voxel = requireFinite(volume.voxel_volume, "el volumen por vóxeles");
+    const domain = requireFinite(volume.domain_volume, "el volumen del dominio");
+    const difference = relativeDifference(mesh, voxel);
+    setVolumeCells([formatNumber(mesh), formatNumber(voxel), formatNumber(domain), `${formatNumber(difference)} %`]);
+  } catch (error) {
+    if (state.selectedId !== id) return;
+    setVolumeCells(VOLUME_CELLS.map(() => "—"));
+    showError(error.message);
+  }
+}
+
+async function selectFunction(id) {
   state.selectedId = id;
   clearError();
   renderFunctionList();
   renderFunctionInfo(state.functions.find((fn) => fn.id === id));
+  await loadVolumes(id);
 }
 
 async function openPanel() {
