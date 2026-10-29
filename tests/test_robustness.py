@@ -5,11 +5,11 @@ import tracemalloc
 
 import pytest
 
-from app.core.config import Settings, get_settings
+from app.core.config import get_settings
 from app.volumes import router as volumes_router
 from app.volumes.sampling import sample_function
 from app.volumes.volume import estimate_volume
-from tests.helpers import register_and_login
+from tests.helpers import register_and_login, settings_from_env
 
 CUBE = [[-1, 1], [-1, 1], [-1, 1]]
 
@@ -95,25 +95,16 @@ async def test_heavy_computation_does_not_block_the_event_loop(client, monkeypat
     assert stall < 0.25
 
 
-def settings_from(monkeypatch, **environment: str) -> Settings:
-    """Settings leída solo de variables de entorno, sin el .env local."""
-    for name in ("APP_MAX_RESOLUTION", "APP_MAX_CONCURRENT_COMPUTATIONS"):
-        monkeypatch.delenv(name, raising=False)
-    for name, value in environment.items():
-        monkeypatch.setenv(name, value)
-    return Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@localhost/db", secret_key="clave")
-
-
 def test_default_limits_keep_memory_bounded(monkeypatch):
     """Una rejilla de 2048³ muestras ocupa unos 69 GB; el límite por defecto debe ser razonable."""
-    settings = settings_from(monkeypatch)
+    settings = settings_from_env(monkeypatch)
 
     assert settings.max_resolution == 256
     assert settings.max_concurrent_computations == 2
 
 
 def test_limits_are_read_from_environment(monkeypatch):
-    settings = settings_from(monkeypatch, APP_MAX_RESOLUTION="64", APP_MAX_CONCURRENT_COMPUTATIONS="1")
+    settings = settings_from_env(monkeypatch, APP_MAX_RESOLUTION="64", APP_MAX_CONCURRENT_COMPUTATIONS="1")
 
     assert settings.max_resolution == 64
     assert settings.max_concurrent_computations == 1
