@@ -1,3 +1,6 @@
+import numpy as np
+import pytest
+
 from app.volumes.sampling import sample_function
 
 CUBE = [[-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5]]
@@ -22,3 +25,23 @@ def test_sample_corners_are_outside():
 
     assert grid.values[0, 0, 0] > 0
     assert grid.values[-1, -1, -1] > 0
+
+
+def test_sample_indexes_values_as_x_y_z():
+    domain = [[0, 1], [10, 20], [100, 300]]
+
+    grid = sample_function("x + y + z", domain, 5)
+
+    x = np.linspace(0, 1, 5)
+    y = np.linspace(10, 20, 5)
+    z = np.linspace(100, 300, 5)
+    expected = x[:, None, None] + y[None, :, None] + z[None, None, :]
+    np.testing.assert_allclose(grid.values, expected)
+
+
+def test_sample_spacing_matches_distance_between_samples():
+    domain = [[0, 1], [10, 20], [100, 300]]
+
+    grid = sample_function("x", domain, 5)
+
+    assert grid.spacing == pytest.approx((0.25, 2.5, 50.0))

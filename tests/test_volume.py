@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -47,3 +48,26 @@ async def test_volume_endpoint(client):
     body = response.json()
     assert body["mesh_volume"] == pytest.approx(GOLDEN["esfera"]["mesh_volume"], rel=1e-6)
     assert body["domain_volume"] == pytest.approx(27.0)
+
+
+SPHERE_EXPRESSION = "(x - cx)**2 + (y - cy)**2 + z**2 - 0.25"
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        [[-1.5, 1.5], [-1.5, 1.5], [-1.5, 1.5]],
+        [[-1.5, 1.5], [-1.0, 1.0], [-0.8, 0.8]],
+        [[-0.2, 1.2], [-0.7, 0.7], [-0.6, 0.6]],
+    ],
+    ids=["cubo", "caja-centrada", "caja-desplazada"],
+)
+def test_sphere_volume_matches_analytic_value(domain):
+    """Esfera de radio 0.5 y centro en (0.5, 0, 0): V = 4/3 π r³, sin importar la forma del dominio."""
+    expression = SPHERE_EXPRESSION.replace("cx", "0.5").replace("cy", "0.0")
+    expected = 4 / 3 * math.pi * 0.5**3
+
+    estimate = estimate_volume(expression, domain, 64)
+
+    assert estimate.mesh_volume == pytest.approx(expected, rel=1e-2)
+    assert estimate.voxel_volume == pytest.approx(expected, rel=3e-2)
