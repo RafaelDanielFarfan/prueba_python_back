@@ -6,6 +6,12 @@
   <title>Panel de volúmenes</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
 </head>
 <body>
   <header>
@@ -43,6 +49,13 @@
         <section id="function-info" class="card" hidden>
           <h2 id="function-name"></h2>
           <dl id="function-fields"></dl>
+        </section>
+
+        <section id="surface" class="card" hidden>
+          <h2>Superficie</h2>
+          <div data-testid="surface-view" id="surface-view">
+            <p id="surface-message" class="muted"></p>
+          </div>
         </section>
 
         <section id="volumes" class="card" hidden>

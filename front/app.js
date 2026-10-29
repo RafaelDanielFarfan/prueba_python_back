@@ -93,6 +93,7 @@ function signOut() {
   state.selectedId = null;
   document.getElementById("function-info").hidden = true;
   document.getElementById("volumes").hidden = true;
+  document.getElementById("surface").hidden = true;
   document.getElementById("select-hint").hidden = false;
   showLogin();
 }
@@ -193,12 +194,150 @@ async function loadVolumes(id) {
   }
 }
 
+// Formato binario de la malla (app/volumes/binary.py, versión 3), little-endian:
+// "IMSH", versión u16, flags u16, n_vértices u32, n_caras u32, origen 3×f64 (40 bytes),
+// vértices n×3×f32 relativos al origen, caras m×3×u32.
+const MESH_MAGIC = "IMSH";
+const MESH_VERSION = 3;
+const MESH_HEADER_BYTES = 40;
+
+function decodeMesh(buffer) {
+  if (buffer.byteLength < MESH_HEADER_BYTES) throw new Error("La malla recibida está incompleta.");
+  const magic = String.fromCharCode(...new Uint8Array(buffer, 0, 4));
+  if (magic !== MESH_MAGIC) throw new Error("La API devolvió un archivo que no es una malla.");
+  const view = new DataView(buffer);
+  const version = view.getUint16(4, true);
+  if (version !== MESH_VERSION) {
+    throw new Error(`Versión de malla no soportada (${version}); el panel espera la ${MESH_VERSION}.`);
+  }
+  const vertexCount = view.getUint32(8, true);
+  const faceCount = view.getUint32(12, true);
+  if (buffer.byteLength < MESH_HEADER_BYTES + vertexCount * 12 + faceCount * 12) {
+    throw new Error("La malla recibida está incompleta.");
+  }
+  const vertices = new Float32Array(buffer, MESH_HEADER_BYTES, vertexCount * 3);
+  const faces = new Uint32Array(buffer, MESH_HEADER_BYTES + vertices.byteLength, faceCount * 3);
+  return { vertices, faces };
+}
+
+let surface = null;
+
+function setSurfaceMessage(text) {
+  document.getElementById("surface-message").textContent = text;
+}
+
+// Three.js se carga bajo demanda: si no hay red o WebGL, el resto del panel sigue funcionando.
+async function ensureSurface() {
+  if (surface) return surface;
+  const [THREE, { OrbitControls }] = await Promise.all([
+    import("three"),
+    import("three/addons/controls/OrbitControls.js"),
+  ]);
+  const container = $("surface-view");
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.append(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x11151c);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+  sun.position.set(3, 5, 4);
+  scene.add(sun);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+  const controls = new OrbitControls(camera, renderer.domElement);
+
+  const resize = () => {
+    const { clientWidth: width, clientHeight: height } = container;
+    if (width === 0 || height === 0) return;
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  };
+  new ResizeObserver(resize).observe(container);
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+  });
+
+  surface = { THREE, scene, camera, controls, resize, mesh: null };
+  return surface;
+}
+
+function clearSurfaceMesh() {
+  if (!surface?.mesh) return;
+  surface.scene.remove(surface.mesh);
+  surface.mesh.geometry.dispose();
+  surface.mesh.material.dispose();
+  surface.mesh = null;
+}
+
+function drawSurface({ vertices, faces }) {
+  const { THREE, scene, camera, controls, resize } = surface;
+  clearSurfaceMesh();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+  geometry.setIndex(new THREE.BufferAttribute(faces, 1));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x4f9cf9,
+    roughness: 0.45,
+    metalness: 0.1,
+    side: THREE.DoubleSide,
+  });
+  surface.mesh = new THREE.Mesh(geometry, material);
+  scene.add(surface.mesh);
+
+  // Los vértices vienen relativos al origen de la malla, así que el encuadre es local.
+  const { center, radius } = geometry.boundingSphere;
+  controls.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(radius * 1.8, radius * 1.4, radius * 2.2));
+  camera.near = radius / 100;
+  camera.far = radius * 100;
+  resize();
+  camera.updateProjectionMatrix();
+}
+
+async function loadSurface(id) {
+  document.getElementById("surface").hidden = false;
+  setSurfaceMessage("Cargando superficie…");
+  try {
+    const buffer = await (await authorized(`/functions/${id}/mesh.bin`)).arrayBuffer();
+    if (state.selectedId !== id) return;
+    const mesh = decodeMesh(buffer);
+    if (mesh.faces.length === 0) {
+      clearSurfaceMesh();
+      setSurfaceMessage("Esta función no tiene superficie dentro del dominio.");
+      return;
+    }
+    try {
+      await ensureSurface();
+    } catch {
+      setSurfaceMessage("No se pudo iniciar la vista 3D: comprueba la conexión y que el navegador admita WebGL.");
+      return;
+    }
+    if (state.selectedId !== id) return;
+    drawSurface(mesh);
+    setSurfaceMessage("");
+  } catch (error) {
+    if (state.selectedId !== id) return;
+    clearSurfaceMesh();
+    setSurfaceMessage("No se pudo cargar la superficie.");
+    showError(error.message);
+  }
+}
+
 async function selectFunction(id) {
   state.selectedId = id;
   clearError();
   renderFunctionList();
   renderFunctionInfo(state.functions.find((fn) => fn.id === id));
+  // En serie: la API admite pocos cálculos simultáneos y respondería 503 si se piden a la vez.
   await loadVolumes(id);
+  await loadSurface(id);
 }
 
 async function openPanel() {
