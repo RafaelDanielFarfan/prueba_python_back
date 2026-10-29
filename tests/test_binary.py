@@ -26,7 +26,7 @@ def test_payload_size_matches_header():
 
     payload = encode_mesh(mesh)
 
-    expected = HEADER.size + mesh.vertices.size * 4 + mesh.faces.size * 2
+    expected = HEADER.size + mesh.vertices.size * 4 + mesh.faces.size * 4
     assert len(payload) == expected
     assert payload[:4] == MAGIC
 

@@ -73,7 +73,7 @@
       const origin = [view.getFloat32(16, true), view.getFloat32(20, true), view.getFloat32(24, true)];
       const headerSize = 28;
       const vertices = new Float32Array(buffer, headerSize, vertexCount * 3);
-      const faces = new Uint16Array(buffer, headerSize + vertices.byteLength, faceCount * 3);
+      const faces = new Uint32Array(buffer, headerSize + vertices.byteLength, faceCount * 3);
       return { origin, vertices, faces };
     }
 
