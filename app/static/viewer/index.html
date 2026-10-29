@@ -70,8 +70,8 @@
       if (magic !== "IMSH") throw new Error("Formato de malla desconocido");
       const vertexCount = view.getUint32(8, true);
       const faceCount = view.getUint32(12, true);
-      const origin = [view.getFloat32(16, true), view.getFloat32(20, true), view.getFloat32(24, true)];
-      const headerSize = 28;
+      const origin = [view.getFloat64(16, true), view.getFloat64(24, true), view.getFloat64(32, true)];
+      const headerSize = 40;
       const vertices = new Float32Array(buffer, headerSize, vertexCount * 3);
       const faces = new Uint32Array(buffer, headerSize + vertices.byteLength, faceCount * 3);
       return { origin, vertices, faces };
